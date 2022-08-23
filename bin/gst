@@ -1,0 +1,247 @@
+#!/bin/bash
+#
+#   bin/gst
+#
+FORCE=0
+IFS=$'\n'
+OIFS="$IFS"
+GIT=git
+GIT_REPO=$( realpath $($GIT rev-parse --git-dir 2> /dev/null) 2> /dev/null )
+GIT_REMOTE=$( $GIT rev-parse --abbrev-ref --symbolic-full-name @{u} 2> /dev/null | sed -e '0,/\//s//\ /' )
+SCRIPT=$( basename $0 )
+WORKING=.
+
+
+#
+#   function[s].
+#
+function MAIN {
+
+    # args.
+    for arg in "$@"
+    do
+        case "$1" in
+            -d|--directory) WORKING $2
+                            shift
+                            shift
+                            ;;
+            -f|--force)     FORCE=1
+                            shift
+                            ;;
+            -h|--help)      HELP
+                            exit
+                            ;;
+            -u|--usage)     USAGE
+                            exit
+                            ;;
+            -w|--working)   WORKING $2
+                            shift
+                            shift
+                            ;;
+        esac
+    done
+
+    # exists.
+    if ! EXISTS; then
+        $GIT $@; exit $?
+    fi
+
+    # status.
+    [ $# -lt 1 ] && STATUS && exit
+
+    # ooo.
+    case "$1" in
+        a|add)      shift
+                    ADD $@
+                    exit
+                    ;;
+            checkout) shift
+                    CHECKOUT $@
+                    exit
+                    ;;
+        c|commit)   shift
+                    COMMIT $@
+                    exit
+                    ;;
+        d|discard)  shift
+                    CHECKOUT $@
+                    exit
+                    ;;
+        g)          shift
+                    G $@
+                    exit
+                    ;;
+        h|help)     HELP $@
+                    exit
+                    ;;
+        l|log)      shift
+                    LOG $@
+                    exit
+                    ;;
+        p|pusl)     shift
+                    PUSL $@
+                    exit
+                    ;;
+        r|reset)    shift
+                    RESET $@
+                    exit
+                    ;;
+            rm)       shift
+                    RM $@
+                    exit
+                    ;;
+        usage)      USAGE
+                    exit
+                    ;;
+    esac
+
+    # status.
+    [ $# -eq 0 ] && STATUS $@ && exit
+
+    # git.
+    $GIT $@
+
+}
+
+
+function ADD {
+    [ $# -eq 0 ] && $GIT add -A
+    [ $# -gt 0 ] && $GIT add $@
+}
+
+function COMMIT {
+    if [ $# -gt 0 ]; then
+        $GIT commit $@
+    else
+
+        # git commit.
+        commit=($GIT "commit")
+
+        # git status entries.
+        for entry in `$GIT status --short`
+        do
+
+            # get commit var.
+            event=$(echo $entry | cut -c1)
+            file=$(echo "${entry:1}" | sed -e 's/^[ \t]*//')
+
+            # ignore not staged/unknown.
+            if [ -z "$event" ]; then
+                continue
+            fi
+            if [[ "$event" == " " ]]; then
+                continue
+            fi
+            if [[ "$event" == "?" ]]; then
+                continue
+            fi
+
+            # set label/message.
+            case "$event" in
+                "A")    label="Added"
+                        ;;
+                "D")    label="Deleted"
+                        ;;
+                "M")    label="Updated"
+                        ;;
+                "R")    label="Renamed"
+                        ;;
+                *)      ERROR "invalid git status event: event '$event' not recognised"
+                        exit 8
+                        ;;
+            esac
+
+            # append to commit.
+            message="$label $file"
+            commit+=(--message)
+            commit+=($message)
+
+        done
+
+        # git commit.
+        "${commit[@]}"
+
+    fi
+}
+
+function CHECKOUT {
+    [ $# -eq 0 ] && $GIT checkout
+    [ $# -eq 1 ] && $GIT checkout -- "$1"
+    [ $# -gt 1 ] && $GIT reset $@    
+}
+
+function ERROR {
+    echo "error: $1"
+}
+
+function EXISTS {
+    if [ ! -z $GIT_REPO ]; then
+        return 0 # git repo.
+    else
+        return 1 # not a git repo.
+    fi
+}
+
+function G {
+    EXISTS
+    ADD
+    COMMIT
+    [ ! -z $GIT_REMOTE ] && PUSH --tags $@
+}
+
+function HELP {
+    USAGE
+}
+
+function LOG {
+    $GIT log $@
+}
+
+function PULL  {
+    eval $GIT pull $GIT_REMOTE $@
+}
+
+function PUSH  {
+    eval $GIT push $GIT_REMOTE $@
+}
+
+function PUSL {
+    PULL $@
+    PUSH $@
+}
+
+function RESET {
+    [ $# -eq 0 ] && $GIT reset $@
+    [ $# -eq 1 ] && $GIT reset HEAD "$1"
+    [ $# -gt 1 ] && $GIT reset $@
+}
+
+function RM {
+    $GIT rm -r $@
+}
+
+function STATUS {
+    $GIT status
+}
+
+function WORKING {
+    [ $# -eq 0 ] && USAGE && exit 8
+    [  ! -d $1 ] && ERROR "cannot change working directory: directory '$1' not found" && exit 8
+    directory=$1
+    cd "$directory"
+}
+
+function USAGE {
+    echo "Usage: $SCRIPT [OPTION]..."
+}
+
+
+#
+#   main.
+#
+MAIN $@
+
+
+#
+#   >(>.<)<
+#

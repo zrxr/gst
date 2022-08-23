@@ -1,0 +1,2 @@
+# gst
+git shorthand tool
